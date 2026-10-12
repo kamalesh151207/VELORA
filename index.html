@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="VELORA — Everything You Need. One Better Experience. A complete front-end e-commerce application.">
+  <meta name="theme-color" content="#14243A">
+  <title>VELORA</title>
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ANNOUNCEMENT BAR -->
+  <aside class="announcement-bar" id="announcement-bar" aria-label="Store announcement">
+    <div class="container announcement-inner">
+      <span class="ann-tag">College Project Demo</span>
+      <p class="ann-text">
+        <span>✨ Discover better deals, every day.</span>
+        <span class="ann-sep">·</span>
+        <span>Free delivery on orders over ₹999</span>
+        <span class="ann-sep">·</span>
+        <span>Use code <strong>WELCOME10</strong> for 10% off</span>
+      </p>
+      <button type="button" class="ann-link" id="ann-policy-btn">About Demo</button>
+    </div>
+  </aside>
+
+  <!-- SITE HEADER -->
+  <header class="site-header" id="site-header">
+    <div class="container header-wrap">
+
+      <!-- Logo -->
+      <a href="/" class="brand-link nav-link" aria-label="VELORA — go to homepage">
+        <span class="brand-mark">V</span>
+        <div class="brand-text">
+          <span class="brand-name">VELORA</span>
+          <span class="brand-sub">One Better Experience</span>
+        </div>
+      </a>
+
+      <!-- Desktop Search -->
+      <form class="header-search" id="header-search-form" role="search" action="/search" method="GET">
+        <div class="search-field-wrap">
+          <svg class="search-field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" name="q" id="header-search-input" class="search-field" placeholder="Search products, brands, categories…" autocomplete="off" aria-label="Search catalog">
+          <button type="button" class="search-clear" id="search-clear-btn" aria-label="Clear search" hidden>×</button>
+        </div>
+        <button type="submit" class="btn btn-teal search-submit-btn">Search</button>
+      </form>
+
+      <!-- Header Actions -->
+      <nav class="header-actions" aria-label="User actions">
+        <a href="/deals" class="action-btn nav-link" aria-label="View best deals">
+          <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          <span class="action-label">Deals</span>
+        </a>
+
+        <a href="/orders" class="action-btn nav-link" aria-label="View orders">
+          <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <span class="action-label">Orders</span>
+          <span class="badge-pill" id="orders-badge" hidden>0</span>
+        </a>
+
+        <a href="/wishlist" class="action-btn action-wishlist nav-link" aria-label="View wishlist">
+          <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          <span class="action-label">Wishlist</span>
+          <span class="badge-count" id="wishlist-badge">0</span>
+        </a>
+
+        <a href="/cart" class="action-btn action-cart nav-link" aria-label="View shopping cart">
+          <div class="cart-icon-box">
+            <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+            <span class="cart-badge badge-count" id="cart-badge">0</span>
+          </div>
+          <div class="cart-label-stack">
+            <span class="cart-label-top">Cart</span>
+            <span class="cart-label-total" id="cart-header-total">₹0</span>
+          </div>
+        </a>
+
+        <!-- Mobile hamburger -->
+        <button type="button" class="mobile-ham" id="mobile-ham" aria-label="Open navigation menu" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Category Nav Bar -->
+    <nav class="cat-nav-bar" aria-label="Browse categories">
+      <div class="container cat-nav-wrap">
+        <a href="/products" class="cat-pill nav-link" data-cat="all">All Products</a>
+        <a href="/category?name=Electronics" class="cat-pill nav-link" data-cat="Electronics">Electronics</a>
+        <a href="/category?name=Fashion" class="cat-pill nav-link" data-cat="Fashion">Fashion</a>
+        <a href="/category?name=Home+and+Living" class="cat-pill nav-link" data-cat="Home and Living">Home &amp; Living</a>
+        <a href="/category?name=Beauty+and+Personal+Care" class="cat-pill nav-link" data-cat="Beauty and Personal Care">Beauty &amp; Care</a>
+        <a href="/category?name=Books+and+Stationery" class="cat-pill nav-link" data-cat="Books and Stationery">Books</a>
+        <a href="/category?name=Sports+and+Fitness" class="cat-pill nav-link" data-cat="Sports and Fitness">Sports</a>
+        <a href="/category?name=Accessories" class="cat-pill nav-link" data-cat="Accessories">Accessories</a>
+        <a href="/category?name=Kitchen+Essentials" class="cat-pill nav-link" data-cat="Kitchen Essentials">Kitchen</a>
+        <a href="/deals" class="cat-pill nav-link cat-pill-deal" data-cat="deals">🔥 Best Deals</a>
+        <a href="/help" class="cat-pill nav-link" data-cat="help">Help</a>
+      </div>
+    </nav>
+
+    <!-- Mobile search bar -->
+    <div class="mobile-search-bar" id="mobile-search-bar">
+      <form class="mobile-search-form" role="search" action="/search" method="GET">
+        <div class="search-field-wrap">
+          <svg class="search-field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" name="q" class="search-field" placeholder="Search…" aria-label="Search on mobile">
+        </div>
+        <button type="submit" class="btn btn-teal btn-sm">Go</button>
+      </form>
+    </div>
+  </header>
+
+  <!-- MOBILE NAV DRAWER -->
+  <div class="mobile-drawer-overlay" id="mobile-drawer-overlay" aria-hidden="true">
+    <nav class="mobile-drawer" id="mobile-drawer" role="dialog" aria-label="Mobile navigation">
+      <div class="mobile-drawer-head">
+        <span class="brand-name">VELORA</span>
+        <button type="button" class="btn-close-x" id="mobile-drawer-close" aria-label="Close menu">×</button>
+      </div>
+      <div class="mobile-drawer-body">
+        <a href="/" class="mobile-nav-link nav-link">🏠 Home</a>
+        <a href="/products" class="mobile-nav-link nav-link">🛍 All Products</a>
+        <a href="/deals" class="mobile-nav-link nav-link">🔥 Best Deals</a>
+        <div class="mobile-nav-divider">Categories</div>
+        <a href="/category?name=Electronics" class="mobile-nav-link nav-link">⚡ Electronics</a>
+        <a href="/category?name=Fashion" class="mobile-nav-link nav-link">👔 Fashion</a>
+        <a href="/category?name=Home+and+Living" class="mobile-nav-link nav-link">🛋️ Home &amp; Living</a>
+        <a href="/category?name=Beauty+and+Personal+Care" class="mobile-nav-link nav-link">✨ Beauty &amp; Care</a>
+        <a href="/category?name=Books+and+Stationery" class="mobile-nav-link nav-link">📚 Books</a>
+        <a href="/category?name=Sports+and+Fitness" class="mobile-nav-link nav-link">🏃 Sports</a>
+        <a href="/category?name=Accessories" class="mobile-nav-link nav-link">🎒 Accessories</a>
+        <a href="/category?name=Kitchen+Essentials" class="mobile-nav-link nav-link">🍳 Kitchen</a>
+        <div class="mobile-nav-divider">My Account</div>
+        <a href="/cart" class="mobile-nav-link nav-link">🛒 Cart (<span id="mobile-cart-count">0</span>)</a>
+        <a href="/wishlist" class="mobile-nav-link nav-link">❤️ Wishlist (<span id="mobile-wishlist-count">0</span>)</a>
+        <a href="/orders" class="mobile-nav-link nav-link">📦 Orders</a>
+        <a href="/help" class="mobile-nav-link nav-link">❓ Help</a>
+      </div>
+    </nav>
+  </div>
+
+  <!-- ===================== PAGE CONTENT OUTLET ===================== -->
+  <main id="app" role="main" aria-live="polite"></main>
+
+  <!-- SITE FOOTER -->
+  <footer class="site-footer" id="site-footer">
+    <div class="container footer-grid">
+      <div class="footer-brand-col">
+        <a href="/" class="brand-link nav-link footer-logo">
+          <span class="brand-mark brand-mark-sm">V</span>
+          <span class="brand-name">VELORA</span>
+        </a>
+        <p class="footer-tagline">Everything You Need. One Better Experience.</p>
+        <p class="footer-desc">A front-end e-commerce web application built as a college main project using HTML5, CSS3, and Vanilla JavaScript (ES6+).</p>
+        <div class="footer-demo-badge">College Main Project · Front-End Demo</div>
+      </div>
+
+      <div class="footer-col">
+        <h4 class="footer-heading">Shop</h4>
+        <ul class="footer-links">
+          <li><a href="/products" class="footer-link nav-link">All Products</a></li>
+          <li><a href="/category?name=Electronics" class="footer-link nav-link">Electronics</a></li>
+          <li><a href="/category?name=Fashion" class="footer-link nav-link">Fashion</a></li>
+          <li><a href="/category?name=Home+and+Living" class="footer-link nav-link">Home &amp; Living</a></li>
+          <li><a href="/category?name=Sports+and+Fitness" class="footer-link nav-link">Sports &amp; Fitness</a></li>
+          <li><a href="/deals" class="footer-link nav-link">Best Deals</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4 class="footer-heading">Account</h4>
+        <ul class="footer-links">
+          <li><a href="/cart" class="footer-link nav-link">Shopping Cart</a></li>
+          <li><a href="/wishlist" class="footer-link nav-link">Wishlist</a></li>
+          <li><a href="/orders" class="footer-link nav-link">Order History</a></li>
+          <li><a href="/recently-viewed" class="footer-link nav-link">Recently Viewed</a></li>
+          <li><a href="/checkout" class="footer-link nav-link">Checkout</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4 class="footer-heading">Info</h4>
+        <ul class="footer-links">
+          <li><a href="/help" class="footer-link nav-link">Help &amp; FAQ</a></li>
+          <li><button type="button" class="footer-link footer-btn" id="footer-policy-btn">Demo Policies</button></li>
+          <li><button type="button" class="footer-link footer-btn text-danger" id="footer-reset-btn">Reset Demo Data</button></li>
+        </ul>
+        <div class="footer-tech-pills">
+          <code>HTML5</code><code>CSS3</code><code>ES6+</code>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="container footer-bottom-inner">
+        <span>© 2026 VELORA — College Demonstration Project. Not a real commercial service.</span>
+        <span class="footer-bottom-note">Client-side · localStorage · Zero Frameworks</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- TOAST CONTAINER -->
+  <div class="toast-wrap" id="toast-wrap" role="region" aria-live="polite" aria-label="Notifications"></div>
+
+  <!-- POLICY MODAL -->
+  <dialog class="modal-dialog" id="policy-modal" aria-labelledby="policy-modal-title" aria-modal="true">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h2 class="modal-title" id="policy-modal-title">Demo Policies &amp; Disclaimer</h2>
+        <button type="button" class="btn-close-x" id="policy-modal-close" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="policy-block">
+          <h3>🎓 Academic Project</h3>
+          <p>VELORA is a college main project front-end application. It operates entirely client-side in the browser. No real products, real money, or real orders are involved.</p>
+        </div>
+        <div class="policy-block">
+          <h3>💰 Pricing Rules</h3>
+          <ul>
+            <li><strong>GST:</strong> Demonstrative 18% flat rate on taxable amount.</li>
+            <li><strong>Delivery:</strong> Free for orders ≥ ₹999. Otherwise ₹79 flat fee.</li>
+            <li><strong>Coupons:</strong> <code>WELCOME10</code> (10% off, min ₹1000, max ₹500), <code>SAVE100</code> (₹100 off, min ₹799), <code>FREESHIP</code> (free delivery).</li>
+          </ul>
+        </div>
+        <div class="policy-block">
+          <h3>🛡️ Privacy</h3>
+          <p>All data (cart, wishlist, orders) is stored only in your browser's localStorage. Nothing is sent to any external server.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-teal btn-block" id="policy-modal-ok">Got it</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="script.js"></script>
+</body>
+</html>
