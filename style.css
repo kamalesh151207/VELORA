@@ -1455,6 +1455,45 @@ ul, ol {
   flex-wrap: wrap;
 }
 
+.hero-btn-deals {
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all var(--t-fast);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.hero-btn-deals:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #FFFFFF !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.hero-btn-deals:active {
+  transform: translateY(0);
+}
+
+.hero-btn-deals .hero-btn-icon {
+  font-size: 15px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  transition: transform var(--t-fast);
+}
+
+.hero-btn-deals:hover .hero-btn-icon {
+  transform: scale(1.18);
+}
+
 .hero-stats {
   display: flex;
   align-items: center;

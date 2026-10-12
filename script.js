@@ -1822,7 +1822,7 @@
               </p>
               <div class="hero-btns">
                 <a href="/products" class="btn btn-teal btn-lg nav-link">Shop All Products →</a>
-                <a href="/deals" class="btn btn-outline nav-link" style="color:#fff; border-color:rgba(255,255,255,.3);">🔥 Explore Deals</a>
+                <a href="/deals" class="btn btn-lg hero-btn-deals nav-link"><span class="hero-btn-icon" aria-hidden="true">🔥</span><span>Explore Best Deals →</span></a>
               </div>
               <div class="hero-stats">
                 <div>
