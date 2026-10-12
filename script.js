@@ -1125,6 +1125,370 @@
   };
 
   // ==========================================================================
+  // 4b. INVOICE ENGINE (Automatic PDF Generation & Persistent Invoice Records)
+  // ==========================================================================
+  const InvoiceEngine = {
+    // Generate sequential unique invoice number (e.g. INV-2026-0001)
+    generateNextInvoiceNumber() {
+      let maxSeq = 0;
+      const currentYear = new Date().getFullYear();
+      (State.orders || []).forEach(o => {
+        if (o.invoiceNumber) {
+          const match = String(o.invoiceNumber).match(/INV-\d{4}-(\d+)/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num) && num > maxSeq) maxSeq = num;
+          }
+        }
+      });
+      const nextSeq = maxSeq + 1;
+      return `INV-${currentYear}-${String(nextSeq).padStart(4, '0')}`;
+    },
+
+    // Ensure all stored orders have persistent invoice numbers and statuses
+    migrateOrders() {
+      let changed = false;
+      let counter = 1;
+
+      (State.orders || []).forEach(o => {
+        if (o.invoiceNumber) {
+          const match = String(o.invoiceNumber).match(/INV-\d{4}-(\d+)/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num) && num >= counter) counter = num + 1;
+          }
+        }
+      });
+
+      (State.orders || []).forEach(o => {
+        if (!o.invoiceNumber) {
+          const currentYear = new Date().getFullYear();
+          o.invoiceNumber = `INV-${currentYear}-${String(counter++).padStart(4, '0')}`;
+          o.invoiceDate = o.formattedDate || new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+          o.orderStatus = o.orderStatus || 'Completed (Demo)';
+          o.paymentStatus = o.paymentStatus || 'Paid (Simulated Demo)';
+          changed = true;
+        }
+      });
+
+      if (changed) {
+        Storage.saveOrders();
+      }
+    },
+
+    formatPdfCurrency(amount) {
+      const num = Number(amount) || 0;
+      return 'Rs. ' + num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    },
+
+    // Build and download the genuine A4 PDF Invoice
+    async generateInvoicePDF(order) {
+      if (!order) {
+        throw new Error('Order data is missing');
+      }
+
+      const jspdfModule = window.jspdf;
+      if (!jspdfModule || !jspdfModule.jsPDF) {
+        throw new Error('PDF generation engine (jsPDF) is not loaded');
+      }
+
+      const { jsPDF } = jspdfModule;
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      // 1. Top Decorative Brand Accent Bar
+      doc.setFillColor(13, 25, 43); // Deep Navy (#0D192B)
+      doc.rect(0, 0, 210, 4.5, 'F');
+
+      // 2. Brand Identity (Logo + Name + Tagline)
+      doc.setFillColor(15, 157, 146); // Teal (#0F9D92)
+      doc.roundedRect(14, 12, 10, 10, 2, 2, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('V', 19, 19, { align: 'center' });
+
+      doc.setTextColor(20, 36, 58); // Midnight Navy (#14243A)
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(19);
+      doc.text('VELORA', 27, 18.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.2);
+      doc.setTextColor(100, 116, 139); // Muted
+      doc.text('Everything You Need. One Better Experience.', 27, 23);
+
+      // 3. Right Header: Tax Invoice Heading & Identifiers
+      doc.setTextColor(15, 157, 146); // Teal
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('TAX INVOICE', 196, 15, { align: 'right' });
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(20, 36, 58);
+      doc.text(`Invoice No: ${order.invoiceNumber || 'INV-DEMO'}`, 196, 20.5, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Order ID: ${order.orderId}`, 196, 25, { align: 'right' });
+      doc.text(`Invoice Date: ${order.invoiceDate || order.formattedDate || 'Today'}`, 196, 29.5, { align: 'right' });
+      doc.text(`Order Date: ${order.formattedDate}`, 196, 34, { align: 'right' });
+
+      // 4. Customer Information & Shipping Destination Box
+      const customer = order.customer || {};
+      doc.setFillColor(246, 248, 251); // Light Gray (#F6F8FB)
+      doc.setDrawColor(226, 232, 240); // Border (#E2E8F0)
+      doc.setLineWidth(0.35);
+      doc.roundedRect(14, 38, 182, 30, 2, 2, 'FD');
+
+      // Left Column: Customer & Delivery Address
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(15, 157, 146);
+      doc.text('BILLED & SHIPPED TO', 18, 44);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(20, 36, 58);
+      doc.text(customer.name || 'Valued Customer', 18, 49.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      const emailPhone = [customer.email, customer.phone].filter(Boolean).join(' · ');
+      if (emailPhone) {
+        doc.text(emailPhone, 18, 54.5);
+      }
+      const fullAddress = [customer.address, customer.city, customer.state, customer.pincode ? `– ${customer.pincode}` : ''].filter(Boolean).join(', ');
+      const splitAddress = doc.splitTextToSize(fullAddress || 'Address on file', 86);
+      doc.text(splitAddress, 18, 59.5);
+
+      // Right Column: Payment & Order Meta
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(15, 157, 146);
+      doc.text('ORDER & PAYMENT SUMMARY', 112, 44);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Payment Mode: ${order.paymentMethod || 'Demonstration Payment'}`, 112, 49.5);
+      doc.text(`Payment Status: ${order.paymentStatus || 'Paid (Simulated Demo)'}`, 112, 54.5);
+      doc.text(`Order Status: ${order.orderStatus || 'Completed (Demonstration)'}`, 112, 59.5);
+      doc.text(`Place of Supply: ${customer.state || 'India'}`, 112, 64.5);
+
+      // 5. Products Table
+      const tableHead = [['S.No.', 'Product Description', 'Qty', 'Unit Price (Rs.)', 'Discount', 'Line Total (Rs.)']];
+      const tableBody = (order.items || []).map((it, idx) => {
+        const qty = parseInt(it.quantity, 10) || 1;
+        const unit = Number(it.unitPrice) || 0;
+        const lineTotal = it.lineTotal !== undefined ? Number(it.lineTotal) : unit * qty;
+
+        let discountStr = '-';
+        if (it.discountPercent && it.discountPercent > 0) {
+          discountStr = `${it.discountPercent}% off`;
+        } else if (it.unitSavings && it.unitSavings > 0) {
+          discountStr = `Rs. ${(it.unitSavings * qty).toLocaleString('en-IN')}`;
+        }
+
+        const nameWithBrand = it.brand ? `${it.name} (${it.brand})` : it.name;
+
+        return [
+          String(idx + 1),
+          nameWithBrand,
+          String(qty),
+          unit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+          discountStr,
+          lineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        ];
+      });
+
+      const autoTableFn = (typeof doc.autoTable === 'function') 
+        ? doc.autoTable.bind(doc) 
+        : (window.jspdfAutoTable ? window.jspdfAutoTable.bind(null, doc) : null);
+
+      if (!autoTableFn) {
+        throw new Error('AutoTable plugin is not available on jsPDF');
+      }
+
+      autoTableFn({
+        startY: 72,
+        head: tableHead,
+        body: tableBody,
+        theme: 'striped',
+        showHead: 'everyPage',
+        margin: { left: 14, right: 14, top: 16, bottom: 22 },
+        styles: {
+          font: 'helvetica',
+          fontSize: 8.5,
+          textColor: [24, 34, 48],
+          cellPadding: 3,
+          overflow: 'linebreak'
+        },
+        headStyles: {
+          fillColor: [20, 36, 58], // Midnight Navy
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 8.5,
+          halign: 'left'
+        },
+        alternateRowStyles: {
+          fillColor: [246, 248, 251] // Light subtle gray
+        },
+        columnStyles: {
+          0: { cellWidth: 12, halign: 'center' },
+          1: { cellWidth: 80, halign: 'left' },
+          2: { cellWidth: 14, halign: 'center' },
+          3: { cellWidth: 25, halign: 'right' },
+          4: { cellWidth: 23, halign: 'right' },
+          5: { cellWidth: 28, halign: 'right' }
+        }
+      });
+
+      // 6. Pricing Summary Box (Totals)
+      let finalY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 120) + 6;
+      const summaryCardHeight = 44;
+      if (finalY + summaryCardHeight > 275) {
+        doc.addPage();
+        finalY = 18;
+      }
+
+      const sumX = 114;
+      const sumW = 82;
+      doc.setFillColor(246, 248, 251);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(sumX, finalY, sumW, summaryCardHeight, 2, 2, 'FD');
+
+      const breakdown = order.breakdown || {};
+      const subtotal = Number(breakdown.subtotal) || 0;
+      const couponDiscount = Number(breakdown.couponDiscount) || 0;
+      const taxAmount = Number(breakdown.taxAmount) || 0;
+      const deliveryFee = Number(breakdown.deliveryFee) || 0;
+      const finalTotal = Number(breakdown.finalTotal) || 0;
+
+      let rowY = finalY + 6.5;
+
+      // Subtotal
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Subtotal:', sumX + 5, rowY);
+      doc.setTextColor(20, 36, 58);
+      doc.text(this.formatPdfCurrency(subtotal), sumX + sumW - 5, rowY, { align: 'right' });
+
+      // Coupon Discount (if applied)
+      if (couponDiscount > 0) {
+        rowY += 5.5;
+        doc.setTextColor(100, 116, 139);
+        doc.text('Coupon Discount:', sumX + 5, rowY);
+        doc.setTextColor(15, 157, 146);
+        doc.text(`-${this.formatPdfCurrency(couponDiscount)}`, sumX + sumW - 5, rowY, { align: 'right' });
+      }
+
+      // GST (18%)
+      rowY += 5.5;
+      doc.setTextColor(100, 116, 139);
+      doc.text('Demonstrative GST (18%):', sumX + 5, rowY);
+      doc.setTextColor(20, 36, 58);
+      doc.text(this.formatPdfCurrency(taxAmount), sumX + sumW - 5, rowY, { align: 'right' });
+
+      // Delivery Charges
+      rowY += 5.5;
+      doc.setTextColor(100, 116, 139);
+      doc.text('Delivery Charges:', sumX + 5, rowY);
+      if (deliveryFee === 0) {
+        doc.setTextColor(15, 157, 146);
+        doc.text('FREE', sumX + sumW - 5, rowY, { align: 'right' });
+      } else {
+        doc.setTextColor(20, 36, 58);
+        doc.text(this.formatPdfCurrency(deliveryFee), sumX + sumW - 5, rowY, { align: 'right' });
+      }
+
+      // Divider
+      rowY += 3.5;
+      doc.setDrawColor(226, 232, 240);
+      doc.line(sumX + 4, rowY, sumX + sumW - 4, rowY);
+
+      // Final Total
+      rowY += 6.5;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(20, 36, 58);
+      doc.text('Final Payable Total:', sumX + 5, rowY);
+      doc.setTextColor(15, 157, 146);
+      doc.text(this.formatPdfCurrency(finalTotal), sumX + sumW - 5, rowY, { align: 'right' });
+
+      // 7. Multi-page Footer and Page Numbers
+      const totalPages = doc.internal.getNumberOfPages();
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.3);
+        doc.line(14, 283, 196, 283);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text('Thank you for shopping with VELORA! · All amounts listed in Indian Rupees (INR / Rs.)', 14, 288);
+        doc.text(`Page ${p} of ${totalPages}`, 196, 288, { align: 'right' });
+        doc.text('This invoice was generated automatically by the VELORA demonstration e-commerce platform. Stored in browser localStorage.', 14, 292);
+      }
+
+      // 8. Trigger real browser PDF download
+      const safeInvoiceNum = (order.invoiceNumber || 'INV-DEMO').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `VELORA-Invoice-${safeInvoiceNum}.pdf`;
+      doc.save(filename);
+      return filename;
+    },
+
+    // UI action to handle button state, feedback toasts, and errors
+    async downloadInvoice(orderId, buttonEl = null) {
+      const order = State.orders.find(o => o.orderId === orderId);
+      if (!order) {
+        Toast.show('Error: Could not locate order record for invoice download.', 'error');
+        return;
+      }
+
+      let originalHtml = '';
+      if (buttonEl) {
+        originalHtml = buttonEl.innerHTML;
+        buttonEl.disabled = true;
+        buttonEl.classList.add('is-loading');
+        buttonEl.innerHTML = `
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px; vertical-align:middle;">
+            <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+            <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/>
+          </svg>
+          Preparing Invoice…
+        `;
+      }
+
+      Toast.show('Preparing your invoice PDF…', 'info');
+
+      try {
+        await new Promise(r => setTimeout(r, 60));
+        const filename = await this.generateInvoicePDF(order);
+        Toast.show(`Invoice downloaded successfully (${filename})`, 'success');
+      } catch (err) {
+        console.error('Invoice generation failed:', err);
+        Toast.show('Unable to generate invoice. Please try again.', 'error');
+      } finally {
+        if (buttonEl) {
+          buttonEl.disabled = false;
+          buttonEl.classList.remove('is-loading');
+          buttonEl.innerHTML = originalHtml;
+        }
+      }
+    }
+  };
+
+
+  // ==========================================================================
   // 5. CATALOG QUERY (Filtering & Sorting)
   // ==========================================================================
   const CatalogQuery = {
@@ -2885,7 +3249,7 @@
               </svg>
             </div>
 
-            <h1 class="confirm-title">Demo Order Confirmed!</h1>
+            <h1 class="confirm-title">Order Placed Successfully</h1>
             <p class="confirm-subtitle">
               Thank you, <strong>${order.customer.name}</strong>! Your demonstration order has been generated and stored locally in your browser.
             </p>
@@ -2896,7 +3260,11 @@
                 <strong>${order.orderId}</strong>
               </div>
               <div class="confirm-row">
-                <span class="text-muted">Date &amp; Time</span>
+                <span class="text-muted">Invoice Number</span>
+                <span class="badge-invoice">${order.invoiceNumber || 'INV-DEMO'}</span>
+              </div>
+              <div class="confirm-row">
+                <span class="text-muted">Order Date</span>
                 <span>${order.formattedDate}</span>
               </div>
               <div class="confirm-row">
@@ -2925,9 +3293,16 @@
             </div>
 
             <div class="confirm-actions">
-              <a href="/order-details?id=${order.orderId}" class="btn btn-navy nav-link">View Full Receipt</a>
-              <a href="/orders" class="btn btn-outline nav-link">My Order History</a>
-              <a href="/products" class="btn btn-teal nav-link">Continue Shopping</a>
+              <button type="button" class="btn btn-teal btn-lg btn-download-invoice" id="confirm-download-invoice-btn" data-order-id="${order.orderId}">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Download Invoice PDF
+              </button>
+              <a href="/order-details?id=${order.orderId}" class="btn btn-navy btn-lg nav-link">View Order Details</a>
+              <a href="/products" class="btn btn-outline btn-lg nav-link">Continue Shopping</a>
             </div>
           </div>
         </div>
@@ -2980,10 +3355,13 @@
               <article class="order-card">
                 <div class="order-card-head">
                   <div>
-                    <span class="order-id">${order.orderId}</span>
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                      <span class="order-id">${order.orderId}</span>
+                      <span class="badge badge-invoice">${order.invoiceNumber || 'INV-DEMO'}</span>
+                    </div>
                     <div class="order-date">${order.formattedDate} · ${order.items.length} distinct item${order.items.length === 1 ? '' : 's'}</div>
                   </div>
-                  <span class="badge badge-stock-in">Demo Placed</span>
+                  <span class="badge badge-stock-in">${order.orderStatus || 'Demo Completed'}</span>
                 </div>
 
                 <div class="order-items-summary">
@@ -2995,7 +3373,17 @@
                     <span class="order-total-label">Total: </span>
                     <span class="order-total-val">${formatCurrency(order.breakdown.finalTotal)}</span>
                   </div>
-                  <a href="/order-details?id=${order.orderId}" class="btn btn-outline btn-sm nav-link">View Order Details →</a>
+                  <div class="order-card-actions">
+                    <button type="button" class="btn btn-outline btn-sm btn-download-invoice" data-order-id="${order.orderId}" title="Download PDF invoice for order ${order.orderId}">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      Download Invoice
+                    </button>
+                    <a href="/order-details?id=${order.orderId}" class="btn btn-navy btn-sm nav-link">View Details →</a>
+                  </div>
                 </div>
               </article>
             `).join('')}
@@ -3044,9 +3432,19 @@
           <div class="page-head">
             <div>
               <h1 class="page-title">Order Details</h1>
-              <p class="page-sub">Reference ID: <strong>${order.orderId}</strong> · Placed on ${order.formattedDate}</p>
+              <p class="page-sub">Reference ID: <strong>${order.orderId}</strong> · Invoice: <strong class="badge-invoice" style="margin-left:4px;">${order.invoiceNumber || 'INV-DEMO'}</strong> · Placed on ${order.formattedDate}</p>
             </div>
-            <a href="/orders" class="btn btn-outline btn-sm nav-link">← All Orders</a>
+            <div class="order-details-actions">
+              <button type="button" class="btn btn-teal btn-sm btn-download-invoice" data-order-id="${order.orderId}">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Download Invoice PDF
+              </button>
+              <a href="/orders" class="btn btn-outline btn-sm nav-link">← All Orders</a>
+            </div>
           </div>
 
           <div class="cart-page-grid">
@@ -3076,7 +3474,8 @@
                   <div><strong>Email:</strong> ${order.customer.email}</div>
                   <div><strong>Phone:</strong> ${order.customer.phone}</div>
                   <div><strong>Address:</strong> ${order.customer.address}, ${order.customer.city}, ${order.customer.state} – ${order.customer.pincode}</div>
-                  <div style="margin-top:8px;"><strong>Status:</strong> <span class="badge badge-stock-in">Demonstration Completed</span></div>
+                  <div style="margin-top:4px;"><strong>Invoice:</strong> <span class="badge-invoice">${order.invoiceNumber || 'INV-DEMO'}</span></div>
+                  <div style="margin-top:4px;"><strong>Status:</strong> <span class="badge badge-stock-in">${order.orderStatus || 'Demonstration Completed'}</span></div>
                 </div>
               </div>
             </div>
@@ -3113,7 +3512,15 @@
                 <strong>Payment Mode:</strong> ${order.paymentMethod}
               </div>
 
-              <a href="/products" class="btn btn-teal btn-block nav-link" style="text-align:center;">Continue Shopping</a>
+              <button type="button" class="btn btn-teal btn-block btn-download-invoice" data-order-id="${order.orderId}" style="margin-bottom:10px;">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Download Invoice PDF
+              </button>
+              <a href="/products" class="btn btn-outline btn-block nav-link" style="text-align:center;">Continue Shopping</a>
             </aside>
           </div>
         </div>
@@ -4142,6 +4549,11 @@
     },
 
     submitCheckout() {
+      if (this._isSubmittingOrder) return;
+
+      const form = document.getElementById('checkout-form');
+      const submitBtn = form ? form.querySelector('button[type="submit"]') : null;
+
       const name = document.getElementById('co-name');
       const email = document.getElementById('co-email');
       const phone = document.getElementById('co-phone');
@@ -4155,14 +4567,15 @@
 
       // Validation
       const valText = (el, errId, minLen) => {
+        if (!el) return '';
         const val = (el.value || '').trim();
         const err = document.getElementById(errId);
         if (val.length < minLen) {
-          err.style.display = 'block';
+          if (err) err.style.display = 'block';
           el.style.borderColor = 'var(--error)';
           isValid = false;
         } else {
-          err.style.display = 'none';
+          if (err) err.style.display = 'none';
           el.style.borderColor = 'var(--border)';
         }
         return val;
@@ -4173,50 +4586,50 @@
       const vCity = valText(city, 'err-co-city', 2);
 
       // Email
-      const emailVal = (email.value || '').trim();
+      const emailVal = email ? (email.value || '').trim() : '';
       const emailErr = document.getElementById('err-co-email');
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
-        emailErr.style.display = 'block';
-        email.style.borderColor = 'var(--error)';
+        if (emailErr) emailErr.style.display = 'block';
+        if (email) email.style.borderColor = 'var(--error)';
         isValid = false;
       } else {
-        emailErr.style.display = 'none';
-        email.style.borderColor = 'var(--border)';
+        if (emailErr) emailErr.style.display = 'none';
+        if (email) email.style.borderColor = 'var(--border)';
       }
 
       // Phone (10 digits)
-      const phoneVal = (phone.value || '').trim().replace(/\D/g, '');
+      const phoneVal = phone ? (phone.value || '').trim().replace(/\D/g, '') : '';
       const phoneErr = document.getElementById('err-co-phone');
       if (phoneVal.length < 10) {
-        phoneErr.style.display = 'block';
-        phone.style.borderColor = 'var(--error)';
+        if (phoneErr) phoneErr.style.display = 'block';
+        if (phone) phone.style.borderColor = 'var(--error)';
         isValid = false;
       } else {
-        phoneErr.style.display = 'none';
-        phone.style.borderColor = 'var(--border)';
+        if (phoneErr) phoneErr.style.display = 'none';
+        if (phone) phone.style.borderColor = 'var(--border)';
       }
 
       // PIN code (6 digits)
-      const pinVal = (pincode.value || '').trim().replace(/\D/g, '');
+      const pinVal = pincode ? (pincode.value || '').trim().replace(/\D/g, '') : '';
       const pinErr = document.getElementById('err-co-pincode');
       if (pinVal.length !== 6) {
-        pinErr.style.display = 'block';
-        pincode.style.borderColor = 'var(--error)';
+        if (pinErr) pinErr.style.display = 'block';
+        if (pincode) pincode.style.borderColor = 'var(--error)';
         isValid = false;
       } else {
-        pinErr.style.display = 'none';
-        pincode.style.borderColor = 'var(--border)';
+        if (pinErr) pinErr.style.display = 'none';
+        if (pincode) pincode.style.borderColor = 'var(--border)';
       }
 
       // State
       const stateErr = document.getElementById('err-co-state');
-      if (!state.value) {
-        stateErr.style.display = 'block';
-        state.style.borderColor = 'var(--error)';
+      if (!state || !state.value) {
+        if (stateErr) stateErr.style.display = 'block';
+        if (state) state.style.borderColor = 'var(--error)';
         isValid = false;
       } else {
-        stateErr.style.display = 'none';
-        state.style.borderColor = 'var(--border)';
+        if (stateErr) stateErr.style.display = 'none';
+        if (state) state.style.borderColor = 'var(--border)';
       }
 
       if (!isValid) {
@@ -4224,66 +4637,108 @@
         return;
       }
 
-      // Save preference if checked
-      if (savePref && savePref.checked) {
-        Storage.saveAddressPref({
-          name: vName,
-          email: emailVal,
-          phone: phoneVal,
-          address: vAddress,
-          city: vCity,
-          state: state.value,
-          pincode: pinVal
-        });
+      if (!State.cart || State.cart.length === 0) {
+        Toast.show('Your shopping cart is empty.', 'error');
+        Router.navigate('/cart');
+        return;
       }
 
-      // Build Order Object
-      const breakdown = PricingEngine.computeFullBreakdown(State.cart);
-      const selectedPayment = document.querySelector('input[name="payment-method"]:checked');
-      const orderId = 'ORD-' + Date.now().toString(36).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000);
+      // Lock to prevent duplicate submissions
+      this._isSubmittingOrder = true;
+      let origSubmitHtml = '';
+      if (submitBtn) {
+        origSubmitHtml = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span>Processing Demo Order…</span>';
+      }
 
-      const orderItems = State.cart.map(item => {
-        const prod = CATALOG_MAP.get(item.productId);
-        return {
-          productId: item.productId,
-          name: prod ? prod.name : 'Item',
-          image: prod ? prod.image : '',
-          unitPrice: prod ? prod.price : 0,
-          quantity: item.quantity
+      try {
+        // Save preference if checked
+        if (savePref && savePref.checked) {
+          Storage.saveAddressPref({
+            name: vName,
+            email: emailVal,
+            phone: phoneVal,
+            address: vAddress,
+            city: vCity,
+            state: state.value,
+            pincode: pinVal
+          });
+        }
+
+        // Build Order Object with persistent invoice record
+        const breakdown = PricingEngine.computeFullBreakdown(State.cart);
+        const selectedPayment = document.querySelector('input[name="payment-method"]:checked');
+        const orderId = 'ORD-' + Date.now().toString(36).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000);
+        const invoiceNumber = InvoiceEngine.generateNextInvoiceNumber();
+
+        const orderItems = State.cart.map(item => {
+          const prod = CATALOG_MAP.get(item.productId);
+          const unitPrice = prod ? prod.price : 0;
+          const originalPrice = prod ? (prod.originalPrice || prod.price) : unitPrice;
+          const discountPercent = prod ? (prod.discount || 0) : 0;
+          const unitSavings = Math.max(0, originalPrice - unitPrice);
+          return {
+            productId: item.productId,
+            name: prod ? prod.name : 'Item',
+            brand: prod ? prod.brand : '',
+            category: prod ? prod.category : '',
+            image: prod ? prod.image : '',
+            unitPrice: unitPrice,
+            originalPrice: originalPrice,
+            discountPercent: discountPercent,
+            unitSavings: unitSavings,
+            quantity: item.quantity,
+            lineTotal: unitPrice * item.quantity
+          };
+        });
+
+        const now = new Date();
+        const invoiceDate = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+        const order = {
+          orderId,
+          invoiceNumber,
+          invoiceDate,
+          userId: State.currentUser ? State.currentUser.id : null,
+          formattedDate: now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          orderStatus: 'Completed (Demo)',
+          paymentStatus: 'Paid (Simulated Demo)',
+          customer: {
+            name: vName,
+            email: emailVal,
+            phone: phoneVal,
+            address: vAddress,
+            city: vCity,
+            state: state.value,
+            pincode: pinVal
+          },
+          paymentMethod: selectedPayment ? selectedPayment.value : 'Cash on Delivery (Simulated)',
+          items: orderItems,
+          breakdown
         };
-      });
 
-      const now = new Date();
-      const order = {
-        orderId,
-        userId: State.currentUser ? State.currentUser.id : null,
-        formattedDate: now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        customer: {
-          name: vName,
-          email: emailVal,
-          phone: phoneVal,
-          address: vAddress,
-          city: vCity,
-          state: state.value,
-          pincode: pinVal
-        },
-        paymentMethod: selectedPayment ? selectedPayment.value : 'Cash on Delivery (Simulated)',
-        items: orderItems,
-        breakdown
-      };
+        // Save order
+        State.orders.unshift(order);
+        Storage.saveOrders();
 
-      // Save order
-      State.orders.unshift(order);
-      Storage.saveOrders();
+        // Clear cart
+        State.cart = [];
+        State.appliedCoupon = null;
+        Storage.saveCart();
+        UI.updateHeaderBadges();
 
-      // Clear cart
-      State.cart = [];
-      State.appliedCoupon = null;
-      Storage.saveCart();
-      UI.updateHeaderBadges();
-
-      Toast.show('Demo order placed successfully!', 'success');
-      Router.navigate(`/order-confirmation?id=${orderId}`);
+        Toast.show('Demo order placed successfully!', 'success');
+        Router.navigate(`/order-confirmation?id=${orderId}`);
+      } catch (err) {
+        console.error('Checkout error:', err);
+        Toast.show('An error occurred while placing order. Please try again.', 'error');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = origSubmitHtml;
+        }
+      } finally {
+        this._isSubmittingOrder = false;
+      }
     }
   };
 
@@ -4310,6 +4765,18 @@
         // Close mobile drawer if open
         const drawer = document.getElementById('mobile-drawer-overlay');
         if (drawer) drawer.classList.remove('open');
+      }
+    });
+
+    // 1b. Global Download Invoice PDF Delegator
+    document.addEventListener('click', (e) => {
+      const invoiceBtn = e.target.closest('.btn-download-invoice');
+      if (!invoiceBtn) return;
+
+      e.preventDefault();
+      const orderId = invoiceBtn.getAttribute('data-order-id');
+      if (orderId) {
+        InvoiceEngine.downloadInvoice(orderId, invoiceBtn);
       }
     });
 
@@ -4579,6 +5046,7 @@
   // ==========================================================================
   function onReady() {
     Storage.init();
+    InvoiceEngine.migrateOrders();
     initGlobalListeners();
     Router.init();
     UI.updateHeaderBadges();
