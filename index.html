@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=auth2">
 </head>
 <body>
 
@@ -56,6 +56,35 @@
 
       <!-- Header Actions -->
       <nav class="header-actions" aria-label="User actions">
+        <!-- Account / Sign In Menu -->
+        <div class="header-account-wrap" id="header-account-wrap">
+          <a href="/login" class="action-btn action-account nav-link" id="header-auth-btn" aria-label="Sign in to your account">
+            <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span class="action-label" id="header-auth-label">Sign In</span>
+          </a>
+          <div class="account-menu-dropdown" id="account-menu-dropdown" hidden role="menu" aria-label="Account menu">
+            <div class="account-menu-header">
+              <span class="account-menu-name" id="menu-user-name">User</span>
+              <span class="account-menu-email" id="menu-user-email">user@example.com</span>
+              <span class="account-menu-badge">Demo Account</span>
+            </div>
+            <div class="account-menu-divider"></div>
+            <a href="/orders" class="account-menu-item nav-link" role="menuitem">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span>My Orders</span>
+            </a>
+            <a href="/wishlist" class="account-menu-item nav-link" role="menuitem">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              <span>Saved Wishlist</span>
+            </a>
+            <div class="account-menu-divider"></div>
+            <button type="button" class="account-menu-item account-menu-logout" id="header-logout-btn" role="menuitem">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </div>
+
         <a href="/deals" class="action-btn nav-link" aria-label="View best deals">
           <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
           <span class="action-label">Deals</span>
@@ -141,10 +170,14 @@
         <a href="/category?name=Accessories" class="mobile-nav-link nav-link">🎒 Accessories</a>
         <a href="/category?name=Kitchen+Essentials" class="mobile-nav-link nav-link">🍳 Kitchen</a>
         <div class="mobile-nav-divider">My Account</div>
+        <div id="mobile-auth-section">
+          <a href="/login" class="mobile-nav-link nav-link" id="mobile-login-link">🔐 Sign In / Register</a>
+        </div>
         <a href="/cart" class="mobile-nav-link nav-link">🛒 Cart (<span id="mobile-cart-count">0</span>)</a>
         <a href="/wishlist" class="mobile-nav-link nav-link">❤️ Wishlist (<span id="mobile-wishlist-count">0</span>)</a>
         <a href="/orders" class="mobile-nav-link nav-link">📦 Orders</a>
         <a href="/help" class="mobile-nav-link nav-link">❓ Help</a>
+        <button type="button" class="mobile-nav-link" id="mobile-logout-btn" style="display:none; width:100%; text-align:left; background:none; border:none; cursor:pointer;">🚪 Sign Out</button>
       </div>
     </nav>
   </div>
@@ -180,6 +213,7 @@
       <div class="footer-col">
         <h4 class="footer-heading">Account</h4>
         <ul class="footer-links">
+          <li><a href="/login" class="footer-link nav-link" id="footer-auth-link">Sign In / Register</a></li>
           <li><a href="/cart" class="footer-link nav-link">Shopping Cart</a></li>
           <li><a href="/wishlist" class="footer-link nav-link">Wishlist</a></li>
           <li><a href="/orders" class="footer-link nav-link">Order History</a></li>
@@ -242,6 +276,6 @@
     </div>
   </dialog>
 
-  <script src="script.js"></script>
+  <script src="script.js?v=auth2"></script>
 </body>
 </html>

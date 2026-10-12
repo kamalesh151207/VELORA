@@ -24,7 +24,10 @@
       wishlist: 'velora_wishlist_v1',
       orders: 'velora_orders_v1',
       recent: 'velora_recent_v1',
-      addressPref: 'velora_address_v1'
+      addressPref: 'velora_address_v1',
+      users: 'velora_users_v1',
+      session: 'velora_session_v1',
+      remember: 'velora_remember_email_v1'
     },
     coupons: {
       'WELCOME10': {
@@ -815,6 +818,7 @@
   // 3. APPLICATION STATE & STORAGE
   // ==========================================================================
   const State = {
+    currentUser: null,
     cart: [],
     savedForLater: [],
     wishlist: [],
@@ -852,6 +856,9 @@
       }
     },
     init() {
+      // Load current demo auth session
+      State.currentUser = this.load(CONFIG.storageKeys.session, null);
+
       State.cart = this.load(CONFIG.storageKeys.cart, []);
       State.savedForLater = this.load(CONFIG.storageKeys.saved, []);
       State.wishlist = this.load(CONFIG.storageKeys.wishlist, []);
@@ -870,7 +877,161 @@
     saveOrders() { this.save(CONFIG.storageKeys.orders, State.orders); },
     saveRecentlyViewed() { this.save(CONFIG.storageKeys.recent, State.recentlyViewed); },
     getAddressPref() { return this.load(CONFIG.storageKeys.addressPref, null); },
-    saveAddressPref(pref) { this.save(CONFIG.storageKeys.addressPref, pref); }
+    saveAddressPref(pref) { this.save(CONFIG.storageKeys.addressPref, pref); },
+    getUsers() { return this.load(CONFIG.storageKeys.users, []); },
+    saveUsers(users) { this.save(CONFIG.storageKeys.users, users); },
+    getSession() { return this.load(CONFIG.storageKeys.session, null); },
+    saveSession(user) { this.save(CONFIG.storageKeys.session, user); },
+    clearSession() {
+      try {
+        localStorage.removeItem(CONFIG.storageKeys.session);
+      } catch (e) {
+        console.warn('Session clear warning:', e);
+      }
+      State.currentUser = null;
+    },
+    getRememberedEmail() { return this.load(CONFIG.storageKeys.remember, ''); },
+    saveRememberedEmail(email) { this.save(CONFIG.storageKeys.remember, email); },
+    clearRememberedEmail() {
+      try {
+        localStorage.removeItem(CONFIG.storageKeys.remember);
+      } catch (e) {
+        console.warn('Remember clear warning:', e);
+      }
+    }
+  };
+
+  // ==========================================================================
+  // DEMO AUTHENTICATION ENGINE
+  // Notice: High-fidelity client-side demonstration authentication.
+  // Real persistent production authentication requires a backend or auth provider.
+  // ==========================================================================
+  const AuthEngine = {
+    // SHA-256 demo hashing helper (prevents storing plaintext passwords)
+    async hashPassword(password, salt = 'velora_demo_salt_v1') {
+      try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password + salt);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      } catch (e) {
+        // Fallback simple hash for older environments
+        let hash = 0;
+        const str = password + salt;
+        for (let i = 0; i < str.length; i++) {
+          hash = ((hash << 5) - hash) + str.charCodeAt(i);
+          hash |= 0;
+        }
+        return 'fallback_' + Math.abs(hash).toString(16);
+      }
+    },
+
+    isValidEmail(email) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(email).trim());
+    },
+
+    async register({ name, email, password, phone = '' }) {
+      const cleanEmail = String(email || '').trim().toLowerCase();
+      const cleanName = String(name || '').trim();
+      const cleanPhone = String(phone || '').trim();
+
+      if (!cleanName || cleanName.length < 2) {
+        return { success: false, message: 'Please enter your full name (at least 2 characters).' };
+      }
+      if (!this.isValidEmail(cleanEmail)) {
+        return { success: false, message: 'Please enter a valid email address.' };
+      }
+      if (!password || password.length < 6) {
+        return { success: false, message: 'Password must be at least 6 characters long.' };
+      }
+
+      const users = Storage.getUsers();
+      const existing = users.find(u => u.email.toLowerCase() === cleanEmail);
+      if (existing) {
+        return { success: false, message: 'An account with this email already exists. Please sign in instead.' };
+      }
+
+      const passwordHash = await this.hashPassword(password);
+      const newUser = {
+        id: 'usr_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        passwordHash,
+        createdAt: new Date().toISOString()
+      };
+
+      users.push(newUser);
+      Storage.saveUsers(users);
+
+      // Create session payload (omit passwordHash for security)
+      const sessionUser = {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        phone: newUser.phone
+      };
+
+      State.currentUser = sessionUser;
+      Storage.saveSession(sessionUser);
+
+      return { success: true, user: sessionUser };
+    },
+
+    async login(email, password, remember = false) {
+      const cleanEmail = String(email || '').trim().toLowerCase();
+      if (!this.isValidEmail(cleanEmail)) {
+        return { success: false, message: 'Please enter a valid email address.' };
+      }
+      if (!password) {
+        return { success: false, message: 'Please enter your password.' };
+      }
+
+      const users = Storage.getUsers();
+      const user = users.find(u => u.email.toLowerCase() === cleanEmail);
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'No account found with this email. Please check your credentials or create an account.'
+        };
+      }
+
+      const hash = await this.hashPassword(password);
+      if (user.passwordHash !== hash) {
+        return { success: false, message: 'Incorrect password. Please try again.' };
+      }
+
+      // Session user
+      const sessionUser = {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone || ''
+      };
+
+      State.currentUser = sessionUser;
+      Storage.saveSession(sessionUser);
+
+      if (remember) {
+        Storage.saveRememberedEmail(cleanEmail);
+      } else {
+        Storage.clearRememberedEmail();
+      }
+
+      return { success: true, user: sessionUser };
+    },
+
+    logout() {
+      Storage.clearSession();
+      State.currentUser = null;
+      UI.updateHeaderBadges();
+    },
+
+    isAuthenticated() {
+      return Boolean(State.currentUser && State.currentUser.email);
+    }
   };
 
   // ==========================================================================
@@ -1096,6 +1257,50 @@
       const headerTotal = document.getElementById('cart-header-total') || document.getElementById('header-cart-total');
       if (headerTotal) {
         headerTotal.textContent = totalUnits > 0 ? formatCurrency(breakdown.finalTotal) : '₹0';
+      }
+
+      // Synchronize Header Auth UI
+      const authLabel = document.getElementById('header-auth-label');
+      const authBtn = document.getElementById('header-auth-btn');
+      const menuDropdown = document.getElementById('account-menu-dropdown');
+      const menuUserName = document.getElementById('menu-user-name');
+      const menuUserEmail = document.getElementById('menu-user-email');
+      const mobileAuthSec = document.getElementById('mobile-auth-section');
+      const mobileLogout = document.getElementById('mobile-logout-btn');
+
+      if (State.currentUser) {
+        const firstName = State.currentUser.name ? State.currentUser.name.split(' ')[0] : 'Account';
+        if (authLabel) authLabel.textContent = `Hi, ${firstName}`;
+        if (authBtn) {
+          authBtn.setAttribute('href', '#');
+          authBtn.setAttribute('aria-expanded', 'false');
+          authBtn.setAttribute('aria-label', `Account menu for ${State.currentUser.name}`);
+        }
+        if (menuUserName) menuUserName.textContent = State.currentUser.name;
+        if (menuUserEmail) menuUserEmail.textContent = State.currentUser.email;
+
+        if (mobileAuthSec) {
+          mobileAuthSec.innerHTML = `
+            <div class="mobile-nav-user-info">
+              <span class="mobile-nav-user-name">👤 ${State.currentUser.name}</span>
+              <span class="mobile-nav-user-email">${State.currentUser.email}</span>
+            </div>
+          `;
+        }
+        if (mobileLogout) mobileLogout.style.display = 'block';
+      } else {
+        if (authLabel) authLabel.textContent = 'Sign In';
+        if (authBtn) {
+          authBtn.setAttribute('href', '/login');
+          authBtn.removeAttribute('aria-expanded');
+          authBtn.setAttribute('aria-label', 'Sign in to your account');
+        }
+        if (menuDropdown) menuDropdown.hidden = true;
+
+        if (mobileAuthSec) {
+          mobileAuthSec.innerHTML = `<a href="/login" class="mobile-nav-link nav-link" id="mobile-login-link">🔐 Sign In / Register</a>`;
+        }
+        if (mobileLogout) mobileLogout.style.display = 'none';
       }
     },
 
@@ -2412,6 +2617,9 @@
 
       const breakdown = PricingEngine.computeFullBreakdown(State.cart);
       const savedPref = Storage.getAddressPref() || {};
+      const prefillName = (State.currentUser && State.currentUser.name) || savedPref.name || '';
+      const prefillEmail = (State.currentUser && State.currentUser.email) || savedPref.email || '';
+      const prefillPhone = (State.currentUser && State.currentUser.phone) || savedPref.phone || '';
 
       const app = document.getElementById('app');
       app.innerHTML = `
@@ -2427,6 +2635,16 @@
               <h1 class="page-title">Demonstration Checkout</h1>
               <p class="page-sub">Review delivery details and place a simulated test order</p>
             </div>
+            ${!State.currentUser ? `
+              <div class="checkout-auth-hint">
+                <span>Already have a VELORA account?</span>
+                <a href="/login?redirect=${encodeURIComponent('/checkout')}" class="btn btn-navy btn-sm nav-link">Sign In to Save Time</a>
+              </div>
+            ` : `
+              <div class="checkout-auth-hint text-teal">
+                <span>Signed in as <strong>${State.currentUser.name}</strong></span>
+              </div>
+            `}
           </div>
 
           <div class="checkout-grid">
@@ -2467,12 +2685,12 @@
                   <div class="form-grid form-grid-2">
                     <div class="form-group">
                       <label class="form-label" for="co-name">Full Name *</label>
-                      <input type="text" id="co-name" class="form-input" placeholder="e.g. Rahul Sharma" value="${savedPref.name || ''}" required>
+                      <input type="text" id="co-name" class="form-input" placeholder="e.g. Rahul Sharma" value="${prefillName}" required>
                       <div class="field-error" id="err-co-name" style="display:none; color:var(--error); font-size:11px; margin-top:3px;">Please enter your full name (at least 2 letters)</div>
                     </div>
                     <div class="form-group">
                       <label class="form-label" for="co-email">Email Address *</label>
-                      <input type="email" id="co-email" class="form-input" placeholder="e.g. rahul@example.com" value="${savedPref.email || ''}" required>
+                      <input type="email" id="co-email" class="form-input" placeholder="e.g. rahul@example.com" value="${prefillEmail}" required>
                       <div class="field-error" id="err-co-email" style="display:none; color:var(--error); font-size:11px; margin-top:3px;">Please enter a valid email address</div>
                     </div>
                   </div>
@@ -2480,7 +2698,7 @@
                   <div class="form-grid form-grid-2">
                     <div class="form-group">
                       <label class="form-label" for="co-phone">Phone Number *</label>
-                      <input type="tel" id="co-phone" class="form-input" placeholder="e.g. 9876543210" value="${savedPref.phone || ''}" required>
+                      <input type="tel" id="co-phone" class="form-input" placeholder="e.g. 9876543210" value="${prefillPhone}" required>
                       <div class="field-error" id="err-co-phone" style="display:none; color:var(--error); font-size:11px; margin-top:3px;">Please enter a valid 10-digit phone number</div>
                     </div>
                     <div class="form-group">
@@ -2724,14 +2942,19 @@
 
       const app = document.getElementById('app');
 
-      if (State.orders.length === 0) {
+      // Filter orders by logged in user if authenticated, or show current session demo orders
+      const userOrders = State.currentUser
+        ? State.orders.filter(o => !o.userId || o.userId === State.currentUser.id || (o.customer && o.customer.email === State.currentUser.email))
+        : State.orders;
+
+      if (userOrders.length === 0) {
         app.innerHTML = `
           <div class="container page-content">
             ${UI.renderBreadcrumbs([
               { label: 'Home', href: '/' },
               { label: 'Order History', href: '#' }
             ])}
-            ${UI.renderEmptyState('📦', 'No Orders Placed Yet', 'You have not completed any demonstration orders in this browser session. Place a test order to see it tracked here!', 'Browse Catalog', '/products')}
+            ${UI.renderEmptyState('📦', 'No Orders Placed Yet', State.currentUser ? `No order records found for ${State.currentUser.name} (${State.currentUser.email}). Place a test order to track it here!` : 'You have not completed any demonstration orders in this browser session. Place a test order to see it tracked here!', 'Browse Catalog', '/products')}
           </div>
         `;
         return;
@@ -2747,13 +2970,13 @@
           <div class="page-head">
             <div>
               <h1 class="page-title">My Order History</h1>
-              <p class="page-sub">Found ${State.orders.length} demonstration order${State.orders.length === 1 ? '' : 's'} in this browser</p>
+              <p class="page-sub">Found ${userOrders.length} demonstration order${userOrders.length === 1 ? '' : 's'}${State.currentUser ? ` for ${State.currentUser.name}` : ' in this browser'}</p>
             </div>
             <a href="/products" class="btn btn-teal btn-sm nav-link">Shop More Items</a>
           </div>
 
           <div class="orders-list">
-            ${State.orders.map(order => `
+            ${userOrders.map(order => `
               <article class="order-card">
                 <div class="order-card-head">
                   <div>
@@ -3080,6 +3303,655 @@
     },
 
     // ------------------------------------------------------------------------
+    // 16. LOGIN PAGE (/login)
+    // Dedicated Two-Column Desktop & Responsive Mobile Layout
+    // ------------------------------------------------------------------------
+    renderLogin(redirectUrl) {
+      document.title = 'Sign In | VELORA';
+
+      const safeRedirect = redirectUrl && redirectUrl.startsWith('/') && !redirectUrl.startsWith('//') ? redirectUrl : '/';
+      const rememberedEmail = Storage.getRememberedEmail();
+
+      const app = document.getElementById('app');
+      app.innerHTML = `
+        <div class="auth-page-wrapper">
+          <div class="container auth-container">
+            <div class="auth-card">
+              <!-- LEFT COLUMN: BRAND EXPERIENCE -->
+              <div class="auth-brand-side">
+                <div class="auth-brand-head">
+                  <a href="/" class="auth-brand-logo nav-link">
+                    <span class="brand-mark">V</span>
+                    <span class="brand-name">VELORA</span>
+                  </a>
+                  <span class="auth-brand-badge">Premium Experience</span>
+                </div>
+
+                <div class="auth-brand-body">
+                  <blockquote class="auth-brand-quote">
+                    "Your next favorite find is just a click away."
+                  </blockquote>
+                  <p class="auth-brand-desc">
+                    Sign in to manage your orders, save your favorites, and continue your shopping journey.
+                  </p>
+
+                  <div class="auth-benefits-list">
+                    <div class="auth-benefit-item">
+                      <div class="auth-benefit-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                      </div>
+                      <div class="auth-benefit-text">
+                        <strong>Track your orders</strong>
+                        <span>Live status updates on your shipments and previous deliveries.</span>
+                      </div>
+                    </div>
+
+                    <div class="auth-benefit-item">
+                      <div class="auth-benefit-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                      </div>
+                      <div class="auth-benefit-text">
+                        <strong>Keep your wishlist in one place</strong>
+                        <span>Save items to purchase later across all product categories.</span>
+                      </div>
+                    </div>
+
+                    <div class="auth-benefit-item">
+                      <div class="auth-benefit-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      </div>
+                      <div class="auth-benefit-text">
+                        <strong>Enjoy a smoother shopping experience</strong>
+                        <span>Pre-filled delivery details, instant checkout, and personalized recommendations.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="auth-brand-foot">
+                  <span class="auth-brand-tagline">Everything You Need. One Better Experience.</span>
+                </div>
+              </div>
+
+              <!-- RIGHT COLUMN: LOGIN FORM -->
+              <div class="auth-form-side">
+                <div class="auth-form-head">
+                  <div class="auth-form-badge">
+                    <span class="auth-dot-demo"></span>
+                    <span>Demonstration Account Access</span>
+                  </div>
+                  <h1 class="auth-title">Welcome back</h1>
+                  <p class="auth-subtitle">Sign in to continue shopping.</p>
+                </div>
+
+                <!-- Form alert notification -->
+                <div class="auth-alert" id="login-alert" hidden role="alert"></div>
+
+                <form id="login-form" class="auth-form" novalidate autocomplete="on">
+                  <!-- Email Address -->
+                  <div class="form-group">
+                    <label class="form-label" for="login-email">Email address <span class="text-danger">*</span></label>
+                    <div class="input-icon-wrap">
+                      <svg class="input-lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                      <input 
+                        type="email" 
+                        id="login-email" 
+                        name="email" 
+                        class="form-input form-input-with-icon" 
+                        placeholder="you@example.com" 
+                        value="${rememberedEmail || ''}"
+                        autocomplete="email" 
+                        required 
+                        aria-required="true"
+                        aria-describedby="login-email-error"
+                      >
+                    </div>
+                    <div class="field-error" id="login-email-error" role="alert"></div>
+                  </div>
+
+                  <!-- Password -->
+                  <div class="form-group">
+                    <div class="label-row-split">
+                      <label class="form-label" for="login-password">Password <span class="text-danger">*</span></label>
+                      <button type="button" class="auth-text-link" id="btn-forgot-password" tabindex="0">Forgot password?</button>
+                    </div>
+                    <div class="input-icon-wrap">
+                      <svg class="input-lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                      <input 
+                        type="password" 
+                        id="login-password" 
+                        name="password" 
+                        class="form-input form-input-with-icon form-input-with-toggle" 
+                        placeholder="Enter your password" 
+                        autocomplete="current-password" 
+                        required 
+                        aria-required="true"
+                        aria-describedby="login-password-error"
+                      >
+                      <button type="button" class="btn-pwd-toggle" id="login-pwd-toggle" aria-label="Toggle password visibility">
+                        <svg class="pwd-eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      </button>
+                    </div>
+                    <div class="field-error" id="login-password-error" role="alert"></div>
+                  </div>
+
+                  <!-- Remember Me Checkbox -->
+                  <div class="form-check-row">
+                    <label class="auth-checkbox-label">
+                      <input type="checkbox" id="login-remember" class="auth-checkbox" ${rememberedEmail ? 'checked' : ''}>
+                      <span>Remember my email on this browser</span>
+                    </label>
+                  </div>
+
+                  <!-- Sign In Submit Button -->
+                  <button type="submit" class="btn btn-teal btn-block btn-lg auth-submit-btn" id="login-submit-btn">
+                    <span class="btn-text">Sign In</span>
+                    <span class="btn-spinner" hidden aria-hidden="true"></span>
+                  </button>
+
+                  <!-- Divider: New to VELORA? -->
+                  <div class="auth-divider">
+                    <span class="auth-divider-label">New to VELORA?</span>
+                  </div>
+
+                  <!-- Create Account Link Button -->
+                  <a href="/register${safeRedirect !== '/' ? `?redirect=${encodeURIComponent(safeRedirect)}` : ''}" class="btn btn-outline btn-block nav-link auth-create-acc-btn">
+                    Create Account
+                  </a>
+                </form>
+
+                <!-- Privacy & Interface Disclaimer Note -->
+                <div class="auth-privacy-note">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                  <span>This is the VELORA shopping account interface. Demonstration accounts are maintained locally in your browser storage. Real persistent server authentication requires a backend provider.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Interactive Form Behavior & Submission
+      const form = document.getElementById('login-form');
+      const emailInput = document.getElementById('login-email');
+      const passwordInput = document.getElementById('login-password');
+      const rememberInput = document.getElementById('login-remember');
+      const emailError = document.getElementById('login-email-error');
+      const passwordError = document.getElementById('login-password-error');
+      const alertBox = document.getElementById('login-alert');
+      const submitBtn = document.getElementById('login-submit-btn');
+      const pwdToggle = document.getElementById('login-pwd-toggle');
+      const forgotBtn = document.getElementById('btn-forgot-password');
+
+      // Password toggle
+      if (pwdToggle && passwordInput) {
+        pwdToggle.addEventListener('click', () => {
+          const isPassword = passwordInput.type === 'password';
+          passwordInput.type = isPassword ? 'text' : 'password';
+          pwdToggle.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+          pwdToggle.innerHTML = isPassword
+            ? `<svg class="pwd-eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
+            : `<svg class="pwd-eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+        });
+      }
+
+      // Forgot password hint
+      if (forgotBtn) {
+        forgotBtn.addEventListener('click', () => {
+          if (alertBox) {
+            alertBox.hidden = false;
+            alertBox.className = 'auth-alert auth-alert-info';
+            alertBox.innerHTML = '<strong>Password Reset Demo:</strong> In this client-side demonstration, you can register a new demo account or reset your browser demo data via the footer button.';
+          }
+        });
+      }
+
+      // Inline validation clearing on input
+      emailInput.addEventListener('input', () => {
+        emailError.textContent = '';
+        emailInput.classList.remove('has-error');
+        alertBox.hidden = true;
+      });
+      passwordInput.addEventListener('input', () => {
+        passwordError.textContent = '';
+        passwordInput.classList.remove('has-error');
+        alertBox.hidden = true;
+      });
+
+      // Submit handler
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        alertBox.hidden = true;
+
+        let hasError = false;
+        const emailVal = (emailInput.value || '').trim();
+        const pwdVal = passwordInput.value || '';
+
+        if (!emailVal) {
+          emailError.textContent = 'Please enter your email address.';
+          emailInput.classList.add('has-error');
+          hasError = true;
+        } else if (!AuthEngine.isValidEmail(emailVal)) {
+          emailError.textContent = 'Please enter a valid email format (e.g. name@example.com).';
+          emailInput.classList.add('has-error');
+          hasError = true;
+        }
+
+        if (!pwdVal) {
+          passwordError.textContent = 'Please enter your password.';
+          passwordInput.classList.add('has-error');
+          hasError = true;
+        }
+
+        if (hasError) return;
+
+        // Processing state
+        submitBtn.disabled = true;
+        submitBtn.querySelector('.btn-text').textContent = 'Signing in…';
+        submitBtn.querySelector('.btn-spinner').hidden = false;
+
+        try {
+          const result = await AuthEngine.login(emailVal, pwdVal, rememberInput.checked);
+          if (result.success) {
+            Toast.show(`Welcome back, ${result.user.name}!`, 'success');
+            UI.updateHeaderBadges();
+            Router.navigate(safeRedirect);
+          } else {
+            alertBox.hidden = false;
+            alertBox.className = 'auth-alert auth-alert-error';
+            alertBox.innerHTML = `<strong>Sign In Failed:</strong> ${result.message}`;
+            submitBtn.disabled = false;
+            submitBtn.querySelector('.btn-text').textContent = 'Sign In';
+            submitBtn.querySelector('.btn-spinner').hidden = true;
+          }
+        } catch (err) {
+          alertBox.hidden = false;
+          alertBox.className = 'auth-alert auth-alert-error';
+          alertBox.textContent = 'An unexpected error occurred. Please try again.';
+          submitBtn.disabled = false;
+          submitBtn.querySelector('.btn-text').textContent = 'Sign In';
+          submitBtn.querySelector('.btn-spinner').hidden = true;
+        }
+      });
+    },
+
+    // ------------------------------------------------------------------------
+    // 17. REGISTER PAGE (/register)
+    // Dedicated Two-Column Desktop & Responsive Mobile Layout
+    // ------------------------------------------------------------------------
+    renderRegister(redirectUrl) {
+      document.title = 'Create Account | VELORA';
+
+      const safeRedirect = redirectUrl && redirectUrl.startsWith('/') && !redirectUrl.startsWith('//') ? redirectUrl : '/';
+
+      const app = document.getElementById('app');
+      app.innerHTML = `
+        <div class="auth-page-wrapper">
+          <div class="container auth-container">
+            <div class="auth-card">
+              <!-- LEFT COLUMN: BRAND EXPERIENCE -->
+              <div class="auth-brand-side">
+                <div class="auth-brand-head">
+                  <a href="/" class="auth-brand-logo nav-link">
+                    <span class="brand-mark">V</span>
+                    <span class="brand-name">VELORA</span>
+                  </a>
+                  <span class="auth-brand-badge">Join VELORA</span>
+                </div>
+
+                <div class="auth-brand-body">
+                  <blockquote class="auth-brand-quote">
+                    "Join VELORA and make every shopping experience better."
+                  </blockquote>
+                  <p class="auth-brand-desc">
+                    Create your demo shopping account to unlock customized order tracking, saved wishlists, and express checkout.
+                  </p>
+
+                  <div class="auth-benefits-list">
+                    <div class="auth-benefit-item">
+                      <div class="auth-benefit-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                      </div>
+                      <div class="auth-benefit-text">
+                        <strong>Track your orders</strong>
+                        <span>Real-time delivery milestone updates for all completed purchases.</span>
+                      </div>
+                    </div>
+
+                    <div class="auth-benefit-item">
+                      <div class="auth-benefit-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                      </div>
+                      <div class="auth-benefit-text">
+                        <strong>Keep your wishlist in one place</strong>
+                        <span>Curate products you love and purchase when ready.</span>
+                      </div>
+                    </div>
+
+                    <div class="auth-benefit-item">
+                      <div class="auth-benefit-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      </div>
+                      <div class="auth-benefit-text">
+                        <strong>Enjoy a smoother shopping experience</strong>
+                        <span>Fast delivery pre-fills and coupon eligibility on every order.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="auth-brand-foot">
+                  <span class="auth-brand-tagline">Everything You Need. One Better Experience.</span>
+                </div>
+              </div>
+
+              <!-- RIGHT COLUMN: REGISTER FORM -->
+              <div class="auth-form-side">
+                <div class="auth-form-head">
+                  <div class="auth-form-badge">
+                    <span class="auth-dot-demo"></span>
+                    <span>Demonstration Account Registration</span>
+                  </div>
+                  <h1 class="auth-title">Create your VELORA account</h1>
+                  <p class="auth-subtitle">Join VELORA and make every shopping experience better.</p>
+                </div>
+
+                <!-- Form alert notification -->
+                <div class="auth-alert" id="reg-alert" hidden role="alert"></div>
+
+                <form id="reg-form" class="auth-form" novalidate autocomplete="on">
+                  <!-- Full Name -->
+                  <div class="form-group">
+                    <label class="form-label" for="reg-name">Full name <span class="text-danger">*</span></label>
+                    <div class="input-icon-wrap">
+                      <svg class="input-lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      <input 
+                        type="text" 
+                        id="reg-name" 
+                        name="name" 
+                        class="form-input form-input-with-icon" 
+                        placeholder="e.g. Ananya Sen" 
+                        autocomplete="name" 
+                        required 
+                        aria-required="true"
+                        aria-describedby="reg-name-error"
+                      >
+                    </div>
+                    <div class="field-error" id="reg-name-error" role="alert"></div>
+                  </div>
+
+                  <!-- Email Address -->
+                  <div class="form-group">
+                    <label class="form-label" for="reg-email">Email address <span class="text-danger">*</span></label>
+                    <div class="input-icon-wrap">
+                      <svg class="input-lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                      <input 
+                        type="email" 
+                        id="reg-email" 
+                        name="email" 
+                        class="form-input form-input-with-icon" 
+                        placeholder="e.g. ananya@example.com" 
+                        autocomplete="email" 
+                        required 
+                        aria-required="true"
+                        aria-describedby="reg-email-error"
+                      >
+                    </div>
+                    <div class="field-error" id="reg-email-error" role="alert"></div>
+                  </div>
+
+                  <!-- Optional Phone Number -->
+                  <div class="form-group">
+                    <label class="form-label" for="reg-phone">Phone number <span class="text-muted">(Optional)</span></label>
+                    <div class="input-icon-wrap">
+                      <svg class="input-lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                      <input 
+                        type="tel" 
+                        id="reg-phone" 
+                        name="phone" 
+                        class="form-input form-input-with-icon" 
+                        placeholder="e.g. 9876543210" 
+                        autocomplete="tel"
+                      >
+                    </div>
+                  </div>
+
+                  <!-- Password -->
+                  <div class="form-group">
+                    <label class="form-label" for="reg-password">Password <span class="text-danger">*</span></label>
+                    <div class="input-icon-wrap">
+                      <svg class="input-lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                      <input 
+                        type="password" 
+                        id="reg-password" 
+                        name="new-password" 
+                        class="form-input form-input-with-icon form-input-with-toggle" 
+                        placeholder="At least 6 characters" 
+                        autocomplete="new-password" 
+                        required 
+                        aria-required="true"
+                        aria-describedby="reg-password-error reg-pwd-hints"
+                      >
+                      <button type="button" class="btn-pwd-toggle" id="reg-pwd-toggle" aria-label="Toggle password visibility">
+                        <svg class="pwd-eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      </button>
+                    </div>
+                    <!-- Password requirements shown before submission -->
+                    <div class="auth-hint-list" id="reg-pwd-hints">
+                      <div class="auth-hint-item" id="hint-len">
+                        <span class="hint-bullet">●</span> At least 6 characters long
+                      </div>
+                    </div>
+                    <div class="field-error" id="reg-password-error" role="alert"></div>
+                  </div>
+
+                  <!-- Confirm Password -->
+                  <div class="form-group">
+                    <label class="form-label" for="reg-confirm">Confirm password <span class="text-danger">*</span></label>
+                    <div class="input-icon-wrap">
+                      <svg class="input-lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                      <input 
+                        type="password" 
+                        id="reg-confirm" 
+                        name="confirm-password" 
+                        class="form-input form-input-with-icon form-input-with-toggle" 
+                        placeholder="Re-enter password" 
+                        autocomplete="new-password" 
+                        required 
+                        aria-required="true"
+                        aria-describedby="reg-confirm-error"
+                      >
+                      <button type="button" class="btn-pwd-toggle" id="reg-confirm-toggle" aria-label="Toggle password visibility">
+                        <svg class="pwd-eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      </button>
+                    </div>
+                    <div class="field-error" id="reg-confirm-error" role="alert"></div>
+                  </div>
+
+                  <!-- Terms & Demo Agreement Checkbox (Not preselected) -->
+                  <div class="form-check-row">
+                    <label class="auth-checkbox-label">
+                      <input type="checkbox" id="reg-terms" class="auth-checkbox" required>
+                      <span>I understand this is a demonstration shopping website and agree to create a demo account.</span>
+                    </label>
+                    <div class="field-error" id="reg-terms-error" role="alert"></div>
+                  </div>
+
+                  <!-- Create Account Submit Button -->
+                  <button type="submit" class="btn btn-teal btn-block btn-lg auth-submit-btn" id="reg-submit-btn">
+                    <span class="btn-text">Create Account</span>
+                    <span class="btn-spinner" hidden aria-hidden="true"></span>
+                  </button>
+
+                  <!-- Switch to Login -->
+                  <div class="auth-switch-box">
+                    <span>Already have an account?</span>
+                    <a href="/login${safeRedirect !== '/' ? `?redirect=${encodeURIComponent(safeRedirect)}` : ''}" class="auth-switch-link nav-link">
+                      Sign In
+                    </a>
+                  </div>
+                </form>
+
+                <!-- Privacy & Interface Disclaimer Note -->
+                <div class="auth-privacy-note">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                  <span>Your demonstration account information is kept inside your browser session. Passwords are securely hashed via browser SHA-256 before storage.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Interactive Form Behavior & Submission
+      const form = document.getElementById('reg-form');
+      const nameInput = document.getElementById('reg-name');
+      const emailInput = document.getElementById('reg-email');
+      const phoneInput = document.getElementById('reg-phone');
+      const passwordInput = document.getElementById('reg-password');
+      const confirmInput = document.getElementById('reg-confirm');
+      const termsInput = document.getElementById('reg-terms');
+
+      const nameError = document.getElementById('reg-name-error');
+      const emailError = document.getElementById('reg-email-error');
+      const passwordError = document.getElementById('reg-password-error');
+      const confirmError = document.getElementById('reg-confirm-error');
+      const termsError = document.getElementById('reg-terms-error');
+      const alertBox = document.getElementById('reg-alert');
+      const submitBtn = document.getElementById('reg-submit-btn');
+
+      const pwdToggle = document.getElementById('reg-pwd-toggle');
+      const confirmToggle = document.getElementById('reg-confirm-toggle');
+      const hintLen = document.getElementById('hint-len');
+
+      // Password visibility toggles
+      const attachToggle = (btn, input) => {
+        if (!btn || !input) return;
+        btn.addEventListener('click', () => {
+          const isPassword = input.type === 'password';
+          input.type = isPassword ? 'text' : 'password';
+          btn.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+          btn.innerHTML = isPassword
+            ? `<svg class="pwd-eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
+            : `<svg class="pwd-eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+        });
+      };
+      attachToggle(pwdToggle, passwordInput);
+      attachToggle(confirmToggle, confirmInput);
+
+      // Realtime password requirement hints
+      passwordInput.addEventListener('input', () => {
+        const val = passwordInput.value || '';
+        if (hintLen) {
+          if (val.length >= 6) {
+            hintLen.classList.add('valid');
+          } else {
+            hintLen.classList.remove('valid');
+          }
+        }
+        passwordError.textContent = '';
+        passwordInput.classList.remove('has-error');
+        alertBox.hidden = true;
+      });
+
+      // Clear inline errors
+      nameInput.addEventListener('input', () => { nameError.textContent = ''; nameInput.classList.remove('has-error'); });
+      emailInput.addEventListener('input', () => { emailError.textContent = ''; emailInput.classList.remove('has-error'); });
+      confirmInput.addEventListener('input', () => { confirmError.textContent = ''; confirmInput.classList.remove('has-error'); });
+      termsInput.addEventListener('change', () => { termsError.textContent = ''; });
+
+      // Registration form submit handler
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        alertBox.hidden = true;
+
+        let hasError = false;
+        const nameVal = (nameInput.value || '').trim();
+        const emailVal = (emailInput.value || '').trim();
+        const phoneVal = (phoneInput.value || '').trim();
+        const pwdVal = passwordInput.value || '';
+        const confirmVal = confirmInput.value || '';
+
+        if (!nameVal || nameVal.length < 2) {
+          nameError.textContent = 'Please enter your full name (at least 2 characters).';
+          nameInput.classList.add('has-error');
+          hasError = true;
+        }
+
+        if (!emailVal) {
+          emailError.textContent = 'Please enter your email address.';
+          emailInput.classList.add('has-error');
+          hasError = true;
+        } else if (!AuthEngine.isValidEmail(emailVal)) {
+          emailError.textContent = 'Please enter a valid email format (e.g. name@example.com).';
+          emailInput.classList.add('has-error');
+          hasError = true;
+        }
+
+        if (!pwdVal) {
+          passwordError.textContent = 'Please choose a password.';
+          passwordInput.classList.add('has-error');
+          hasError = true;
+        } else if (pwdVal.length < 6) {
+          passwordError.textContent = 'Password must be at least 6 characters long.';
+          passwordInput.classList.add('has-error');
+          hasError = true;
+        }
+
+        if (!confirmVal) {
+          confirmError.textContent = 'Please confirm your password.';
+          confirmInput.classList.add('has-error');
+          hasError = true;
+        } else if (confirmVal !== pwdVal) {
+          confirmError.textContent = 'Passwords do not match. Please verify both fields.';
+          confirmInput.classList.add('has-error');
+          hasError = true;
+        }
+
+        if (!termsInput.checked) {
+          termsError.textContent = 'Please agree to the demonstration disclaimer to proceed.';
+          hasError = true;
+        }
+
+        if (hasError) return;
+
+        // Prevent duplicate submissions and indicate loading state
+        submitBtn.disabled = true;
+        submitBtn.querySelector('.btn-text').textContent = 'Creating account…';
+        submitBtn.querySelector('.btn-spinner').hidden = false;
+
+        try {
+          const result = await AuthEngine.register({
+            name: nameVal,
+            email: emailVal,
+            password: pwdVal,
+            phone: phoneVal
+          });
+
+          if (result.success) {
+            Toast.show(`Account created! Welcome to VELORA, ${result.user.name}.`, 'success');
+            UI.updateHeaderBadges();
+            Router.navigate(safeRedirect);
+          } else {
+            alertBox.hidden = false;
+            alertBox.className = 'auth-alert auth-alert-error';
+            alertBox.innerHTML = `<strong>Registration Failed:</strong> ${result.message}`;
+            submitBtn.disabled = false;
+            submitBtn.querySelector('.btn-text').textContent = 'Create Account';
+            submitBtn.querySelector('.btn-spinner').hidden = true;
+          }
+        } catch (err) {
+          alertBox.hidden = false;
+          alertBox.className = 'auth-alert auth-alert-error';
+          alertBox.textContent = 'An unexpected error occurred during account creation. Please try again.';
+          submitBtn.disabled = false;
+          submitBtn.querySelector('.btn-text').textContent = 'Create Account';
+          submitBtn.querySelector('.btn-spinner').hidden = true;
+        }
+      });
+    },
+
+    // ------------------------------------------------------------------------
     // 15. NOT FOUND (404)
     // ------------------------------------------------------------------------
     renderNotFound(path) {
@@ -3124,7 +3996,9 @@
       '/order-details': (params) => Pages.renderOrderDetails(params.get('id')),
       '/recently-viewed': () => Pages.renderRecentlyViewed(),
       '/deals': () => Pages.renderDeals(),
-      '/help': () => Pages.renderHelp()
+      '/help': () => Pages.renderHelp(),
+      '/login': (params) => Pages.renderLogin(params.get('redirect')),
+      '/register': (params) => Pages.renderRegister(params.get('redirect'))
     },
 
     resolve() {
@@ -3382,6 +4256,7 @@
       const now = new Date();
       const order = {
         orderId,
+        userId: State.currentUser ? State.currentUser.id : null,
         formattedDate: now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
         customer: {
           name: vName,
@@ -3596,7 +4471,62 @@
       });
     }
 
-    // 6. Policy Modal Dialog
+    // 6. Header Account Dropdown & Sign Out
+    const headerAuthBtn = document.getElementById('header-auth-btn');
+    const accountDropdown = document.getElementById('account-menu-dropdown');
+    const headerLogoutBtn = document.getElementById('header-logout-btn');
+    const mobileLogoutBtn = document.getElementById('mobile-logout-btn');
+
+    if (headerAuthBtn) {
+      headerAuthBtn.addEventListener('click', (e) => {
+        if (State.currentUser) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (accountDropdown) {
+            const isHidden = accountDropdown.hidden;
+            accountDropdown.hidden = !isHidden;
+            headerAuthBtn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+          }
+        }
+      });
+    }
+
+    // Close dropdown on click outside
+    document.addEventListener('click', (e) => {
+      if (accountDropdown && !accountDropdown.hidden) {
+        if (!e.target.closest('#header-account-wrap')) {
+          accountDropdown.hidden = true;
+          if (headerAuthBtn) headerAuthBtn.setAttribute('aria-expanded', 'false');
+        }
+      }
+    });
+
+    // Close dropdown on ESC
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && accountDropdown && !accountDropdown.hidden) {
+        accountDropdown.hidden = true;
+        if (headerAuthBtn) {
+          headerAuthBtn.setAttribute('aria-expanded', 'false');
+          headerAuthBtn.focus();
+        }
+      }
+    });
+
+    const handleSignOut = () => {
+      if (accountDropdown) accountDropdown.hidden = true;
+      AuthEngine.logout();
+      Toast.show('You have signed out successfully.', 'teal');
+      Router.navigate('/');
+    };
+
+    if (headerLogoutBtn) headerLogoutBtn.addEventListener('click', handleSignOut);
+    if (mobileLogoutBtn) mobileLogoutBtn.addEventListener('click', () => {
+      const drawer = document.getElementById('mobile-drawer-overlay');
+      if (drawer) drawer.classList.remove('open');
+      handleSignOut();
+    });
+
+    // 7. Policy Modal Dialog
     const policyModal = document.getElementById('policy-modal');
     const openPolicyBtns = [
       document.getElementById('ann-policy-btn'),
